@@ -16,6 +16,13 @@ robot = Robot()
 
 # get the time step of the current world.
 timestep = 32
+max_velocity = 6.28      # Set a maximum velocity time constant
+
+wheel_left = robot.getDevice("left wheel motor")   # Create an object to control the left wheel
+wheel_right = robot.getDevice("right wheel motor") # Create an object to control the right wheel
+
+#[left wheel speed, right wheel speed]
+speeds = [max_velocity,max_velocity]
 
 # enable distance sensors
 fds = robot.getDevice('frontDist')
@@ -43,6 +50,13 @@ camera.enable(timestep)
 pos_sensor = robot.getDevice('gps')
 pos_sensor.enable(timestep)
 
+colorSensor = robot.getDevice("color")
+colorSensor.enable(timestep)
+
+emitter = robot.getDevice("emitter")    # Emitter doesn't need enable
+
+wheel_left.setPosition(float("inf"))
+wheel_right.setPosition(float("inf"))
 
 # detect the wall from robot (left / right / front of robot)
 def getSurrounding():
@@ -318,7 +332,7 @@ def spin():
 
 def delay(ms):
     initTime = robot.getTime()      # Store starting time (in seconds)
-    while robot.step(timeStep) != -1:
+    while robot.step(timestep) != -1:
         if (robot.getTime() - initTime) * 1000.0 > ms: # If time elapsed (converted into ms) is greater than value passed in
             break
 
@@ -327,7 +341,7 @@ def getColor():
     return colorSensor.imageGetGray(img, colorSensor.getWidth(), 0, 0)    # Return grayness of the only pixel (0-255)
     
 def checkVic(img):
-    img = np.frombuffer(img, np.uint8).reshape((cam.getHeight(), cam.getWidth(), 4))  # Convert img to RGBA format (for OpenCV)
+    img = np.frombuffer(img, np.uint8).reshape((camera.getHeight(), camera.getWidth(), 4))  # Convert img to RGBA format (for OpenCV)
 
     # SIFT
     queryKP, queryDesc = detector.detectAndCompute(img, None)
@@ -366,13 +380,37 @@ def report(victimType):
     wheel_right.setVelocity(0)
     delay(1300)
     victimType = bytes(victimType, "utf-8")    # Convert victimType to character for struct.pack
-    posX = int(gps.getValues()[0] * 100)    # Convert from cm to m
-    posZ = int(gps.getValues()[2] * 100)
+    posX = int(pos_sensor.getValues()[0] * 100)    # Convert from cm to m
+    posZ = int(pos_sensor.getValues()[2] * 100)
     message = struct.pack("i i c", posX, posZ, victimType)
     emitter.send(message)
-    robot.step(timeStep)
+    robot.step(timestep)
     
 while robot.step(timestep) != -1:
+    # Navigation sample
+    speeds[0] = max_velocity
+    speeds[1] = max_velocity
+
+    # Check left and right sensor to avoid walls
+    # for sensor on the left, either
+    if lds.getValue() < 0.05:
+        turn_right()  # We see a wall on the left, so turn right away from the wall
+
+    if rds.getValue() < 0.05:  # for sensor on the right too
+        turn_left()
+
+    # for front sensor
+    if fds.getValue() < 0.05:
+        spin()
+
+    # if on black, turn away
+    if getColor() < 80:
+        spin()
+        wheel_left.setVelocity(speeds[0])
+        wheel_right.setVelocity(speeds[1])
+        delay(600)
+
+    # Mapping
     getSurrounding()
     direction = GetRobotRotation()
     # Get Robot current tile position
@@ -385,9 +423,11 @@ while robot.step(timestep) != -1:
     printMaze(grid)
     readings = ObstacleAvoidance()
     CheckWallPosition(direction, grid, current_tile_x, current_tile_y, readings[0], readings[1], readings[2])
-    vic = checkVic(cam.getImage())
-    if vic:
-        report(vic) # Report victim
 
-    # wheel_left.setVelocity(speeds[0])              # Send the speed values we have choosen to the robot
-    # wheel_right.setVelocity(speeds[1])
+    # Victim Detection
+    vic = checkVic(camera.getImage())
+    if vic:
+        report(vic) # Cannot determine type of victim, so always try 'T' for now
+
+    wheel_left.setVelocity(speeds[0])              # Send the speed values we have choosen to the robot
+    wheel_right.setVelocity(speeds[1])             # Disable this if do not want robot to move
