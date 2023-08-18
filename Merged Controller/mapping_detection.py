@@ -385,9 +385,9 @@ while robot.step(timestep) != -1:
     printMaze(grid)
     readings = ObstacleAvoidance()
     CheckWallPosition(direction, grid, current_tile_x, current_tile_y, readings[0], readings[1], readings[2])
-    # vic = checkVic(cam.getImage())
-    # if vic:
-    #     report(vic) # Cannot determine type of victim, so always try 'T' for now
+    vic = checkVic(cam.getImage())
+    if vic:
+        report(vic) # Report victim
 
     # wheel_left.setVelocity(speeds[0])              # Send the speed values we have choosen to the robot
     # wheel_right.setVelocity(speeds[1])
